@@ -30,7 +30,7 @@ download_container: true
 # if this is set to true, uses the localhost for download_run_once mode
 # (requires docker and sudo to access docker). You may want this option for
 # local caching of docker images or for Flatcar Container Linux by Kinvolk cluster nodes.
-# Otherwise, uses the first node in the kube-master group to store images
+# Otherwise, uses the first node in the kube_control_plane group to store images
 # in the download_run_once mode.
 download_localhost: false
 
@@ -42,8 +42,8 @@ download_always_pull: false
 # SSL validation of get_url module. Note that kubespray will still be performing checksum validation.
 download_validate_certs: true
 
-# Use the first kube-master if download_localhost is not set
-download_delegate: "{% if download_localhost %}localhost{% else %}{{ groups['kube-master'][0] }}{% endif %}"
+# Use the first kube_control_plane if download_localhost is not set
+download_delegate: "{% if download_localhost %}localhost{% else %}{{ groups['kube_control_plane'][0] }}{% endif %}"
 
 # Arch of Docker images and needed packages
 image_arch: "{{host_architecture | default('amd64')}}"
@@ -52,6 +52,7 @@ image_arch: "{{host_architecture | default('amd64')}}"
 kubeadm_version: "{{ kube_version }}"
 etcd_version: v3.4.13
 crun_version: 0.18
+kata_containers_version: 1.11.3
 
 # gcr and kubernetes image repo define
 gcr_image_repo: "gcr.io"
@@ -78,7 +79,7 @@ weave_version: 2.8.1
 pod_infra_version: "3.3"
 cilium_version: "v1.8.8"
 kube_ovn_version: "v1.6.1"
-kube_router_version: "v1.1.1"
+kube_router_version: "v1.2.0"
 multus_version: "v3.7"
 ovn4nfv_ovn_image_version: "v1.0.0"
 ovn4nfv_k8s_plugin_image_version: "v1.1.0"
@@ -103,6 +104,7 @@ calico_crds_download_url: "https://github.com/projectcalico/calico/archive/{{ ca
 crictl_download_url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-{{ ansible_system | lower }}-{{ image_arch }}.tar.gz"
 helm_download_url: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ image_arch }}.tar.gz"
 crun_download_url: "https://github.com/containers/crun/releases/download/{{ crun_version }}/crun-{{ crun_version }}-linux-{{ image_arch }}"
+kata_containers_download_url: "https://github.com/kata-containers/runtime/releases/download/{{ kata_containers_version }}/kata-static-{{ kata_containers_version }}-{{ ansible_architecture }}.tar.xz"
 
 crictl_checksums:
   arm:
@@ -473,6 +475,14 @@ crun_checksums:
     0.17: 0
     0.18: e580157bc8f87114a2f1d8ac28f8a7c4a588dfa21969fc99f78919cb9bf3ed0a
 
+kata_containers_binary_checksums:
+  arm:
+    1.11.3: 0
+  amd64:
+    1.11.3: edbee010e913de980ab104958d7a6fc8394ea069038ad8c6210db36620284364
+  arm64:
+    1.11.3: 0
+
 etcd_binary_checksum: "{{ etcd_binary_checksums[image_arch] }}"
 cni_binary_checksum: "{{ cni_binary_checksums[image_arch] }}"
 kubelet_binary_checksum: "{{ kubelet_checksums[image_arch][kube_version] }}"
@@ -483,6 +493,7 @@ calico_crds_archive_checksum: "{{ calico_crds_archive_checksums[calico_version] 
 crictl_binary_checksum: "{{ crictl_checksums[image_arch][crictl_version] }}"
 helm_archive_checksum: "{{ helm_archive_checksums[image_arch][helm_version] }}"
 crun_binary_checksum: "{{ crun_checksums[image_arch][crun_version] }}"
+kata_containers_binary_checksum: "{{ kata_containers_binary_checksums[image_arch][kata_containers_version] }}"
 
 # Containers
 # In some cases, we need a way to set --registry-mirror or --insecure-registry for docker,
@@ -676,7 +687,7 @@ downloads:
     enabled: true
     file: true
     version: "{{ cni_version }}"
-    dest: "{{local_release_dir}}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
+    dest: "{{ local_release_dir }}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
     sha256: "{{ cni_binary_checksum }}"
     url: "{{ cni_download_url }}"
     unarchive: false
@@ -722,13 +733,13 @@ downloads:
     owner: "root"
     mode: "0755"
     groups:
-    - kube-master
+    - kube_control_plane
 
   crictl:
     file: true
     enabled: "{{ container_manager in ['crio', 'cri', 'containerd'] }}"
     version: "{{ crictl_version }}"
-    dest: "{{local_release_dir}}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
+    dest: "{{ local_release_dir }}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
     sha256: "{{ crictl_binary_checksum }}"
     url: "{{ crictl_download_url }}"
     unarchive: true
@@ -744,6 +755,19 @@ downloads:
     dest: "{{ local_release_dir }}/crun"
     sha256: "{{ crun_binary_checksum }}"
     url: "{{ crun_download_url }}"
+    unarchive: false
+    owner: "root"
+    mode: "0755"
+    groups:
+    - k8s-cluster
+
+  kata_containers:
+    enabled: "{{ kata_containers_enabled }}"
+    file: true
+    version: "{{ kata_containers_version }}"
+    dest: "{{ local_release_dir }}/kata-static-{{ kata_containers_version }}-{{ image_arch }}.tar.xz"
+    sha256: "{{ kata_containers_binary_checksum }}"
+    url: "{{ kata_containers_download_url }}"
     unarchive: false
     owner: "root"
     mode: "0755"
@@ -859,7 +883,7 @@ downloads:
     owner: "root"
     mode: "0755"
     groups:
-    - kube-master
+    - kube_control_plane
 
   weave_kube:
     enabled: "{{ kube_network_plugin == 'weave' }}"
@@ -949,7 +973,7 @@ downloads:
     tag: "{{ coredns_image_tag }}"
     sha256: "{{ coredns_digest_checksum|default(None) }}"
     groups:
-    - kube-master
+    - kube_control_plane
 
   nodelocaldns:
     enabled: "{{ enable_nodelocaldns }}"
@@ -967,7 +991,7 @@ downloads:
     tag: "{{ dnsautoscaler_image_tag }}"
     sha256: "{{ dnsautoscaler_digest_checksum|default(None) }}"
     groups:
-    - kube-master
+    - kube_control_plane
 
   testbox:
     enabled: false
@@ -987,7 +1011,7 @@ downloads:
     owner: "root"
     mode: "0755"
     groups:
-    - kube-master
+    - kube_control_plane
 
   registry:
     enabled: "{{ registry_enabled }}"
@@ -1014,7 +1038,7 @@ downloads:
     tag: "{{ metrics_server_image_tag }}"
     sha256: "{{ metrics_server_digest_checksum|default(None) }}"
     groups:
-    - kube-master
+    - kube_control_plane
 
   addon_resizer:
     # Currently addon_resizer is only used by metrics server
@@ -1024,7 +1048,7 @@ downloads:
     tag: "{{ addon_resizer_image_tag }}"
     sha256: "{{ addon_resizer_digest_checksum|default(None) }}"
     groups:
-    - kube-master
+    - kube_control_plane
 
   local_volume_provisioner:
     enabled: "{{ local_volume_provisioner_enabled }}"
@@ -1195,7 +1219,7 @@ downloads:
     tag: "{{ dashboard_image_tag }}"
     sha256: "{{ dashboard_digest_checksum|default(None) }}"
     groups:
-    - kube-master
+    - kube_control_plane
 
   dashboard_metrics_scrapper:
     enabled: "{{ dashboard_enabled }}"
@@ -1204,7 +1228,7 @@ downloads:
     tag: "{{ dashboard_metrics_scraper_tag }}"
     sha256: "{{ dashboard_digest_checksum|default(None) }}"
     groups:
-    - kube-master
+    - kube_control_plane
 
 download_defaults:
   container: false
