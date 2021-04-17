@@ -15,7 +15,7 @@ is_fedora_coreos: false
 disable_swap: true
 
 ## Change this to use another Kubernetes version, e.g. a current beta release
-kube_version: v1.20.5
+kube_version: v1.20.6
 
 ## The minimum version working
 kube_version_min_required: v1.18.0
@@ -265,7 +265,8 @@ docker_container_storage_setup: false
 ## Otherwise docker-storage-setup will be executed incorrectly.
 # docker_container_storage_setup_devs: /dev/vdb
 
-## Uncomment this if you have more than 3 nameservers, then we'll only use the first 3.
+## Only set this if you have more than 3 nameservers:
+## If true Kubespray will only use the first 3, otherwise it will fail
 docker_dns_servers_strict: false
 
 # Path used to store Docker data
@@ -420,6 +421,7 @@ kubelet_protect_kernel_defaults: true
 ## List of key=value pairs that describe feature gates for
 ## the k8s cluster.
 kube_feature_gates: []
+kubeadm_feature_gates: []
 
 # Local volume provisioner storage classes
 # Levarages Ansibles string to Python datatype casting. Otherwise the dict_key isn't substituted
